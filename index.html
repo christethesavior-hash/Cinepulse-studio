@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0b0d14" />
+  <title>CinePulse AI — 15s–60s Multi-Scene Video Generator</title>
+  <style>
+    :root {
+      --bg: #090b12;
+      --panel: #131724;
+      --border: #252d44;
+      --accent: #00f5d4;
+      --accent2: #a855f7;
+      --warn: #ffe600;
+      --danger: #ff006e;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    body { background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+      padding: 12px 18px; background: rgba(19, 23, 36, 0.96); border-bottom: 1px solid var(--border);
+    }
+
+    .brand {
+      font-weight: 900; font-size: 1.15rem; letter-spacing: 0.4px;
+      background: linear-gradient(90deg, var(--accent), #c084fc);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+
+    .top-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+    input, select, textarea, button {
+      background: #1c2236; color: var(--text); border: 1px solid #323c59;
+      border-radius: 8px; padding: 8px 12px; font-size: 0.86rem; outline: none;
+    }
+
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+
+    button {
+      cursor: pointer; font-weight: 700; display: inline-flex; align-items: center; gap: 6px;
+      transition: transform 0.12s ease, opacity 0.15s ease, border-color 0.15s ease;
+    }
+
+    button:hover { border-color: var(--accent); }
+    button:active { transform: scale(0.97); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #00f5d4, #3b82f6);
+      color: #041019; border: none; font-weight: 800;
+    }
+
+    .btn-extend {
+      background: linear-gradient(135deg, #a855f7, #ec4899);
+      color: #ffffff; border: none; font-weight: 800;
+    }
+
+    .workspace {
+      display: grid; grid-template-columns: 1fr 430px; gap: 16px;
+      padding: 16px; max-width: 1440px; width: 100%; margin: 0 auto; flex: 1;
+    }
+
+    @media (max-width: 960px) { .workspace { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px;
+    }
+
+    .canvas-stage {
+      background: #04060a; border-radius: 10px; border: 1px solid #1f263b;
+      display: flex; align-items: center; justify-content: center; overflow: hidden;
+      min-height: 340px; max-height: 62vh; position: relative;
+    }
+
+    canvas { max-width: 100%; max-height: 60vh; width: auto; height: auto; display: block; }
+
+    .transport {
+      display: flex; align-items: center; gap: 10px; background: #181e30;
+      padding: 10px 12px; border-radius: 10px; flex-wrap: wrap;
+    }
+
+    .transport input[type="range"] { flex: 1; accent-color: var(--accent); padding: 0; }
+    .time-badge { font-variant-numeric: tabular-nums; font-size: 0.82rem; color: var(--muted); min-width: 95px; text-align: right; }
+
+    .status-bar {
+      font-size: 0.83rem; padding: 8px 12px; border-radius: 8px;
+      background: rgba(0, 245, 212, 0.1); border: 1px solid rgba(0, 245, 212, 0.3);
+      color: var(--accent); font-weight: 600;
+    }
+
+    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .label-sm { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); font-weight: 700; }
+
+    .scene-list {
+      display: flex; flex-direction: column; gap: 8px;
+      max-height: 310px; overflow-y: auto; padding-right: 4px;
+    }
+
+    .scene-card {
+      background: #191f31; border: 1px solid #2b3550; border-radius: 9px;
+      padding: 9px; display: flex; flex-direction: column; gap: 6px;
+    }
+
+    .scene-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .scene-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; color: var(--accent); font-weight: 700; }
+
+    /* Modal for Extension Exporter */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(4, 6, 12, 0.82);
+      display: none; align-items: center; justify-content: center; z-index: 999; padding: 16px;
+    }
+    .modal {
+      background: var(--panel); border: 1px solid var(--accent); border-radius: 14px;
+      max-width: 540px; width: 100%; padding: 20px; display: flex; flex-direction: column; gap: 12px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">🎬 CINEPULSE AI STUDIO</div>
+    <div class="top-controls">
+      <input type="password" id="apiKeyInput" placeholder="Paste Google AI Studio Key (AIza...)" style="width:225px;" />
+      <button id="openExtModalBtn" title="Download Browser Extension or App">🧩 Get Extension</button>
+      <button id="exportBtn" class="btn-primary">💾 Export Full Video (.WebM)</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <!-- LEFT: VIDEO CANVAS & PLAYBACK -->
+    <section class="panel">
+      <div class="status-bar" id="statusBar">
+        ✨ Ready! Enter a topic below and tap "Generate 15s–60s Video" (or press Play to preview the default 20s demo).
+      </div>
+
+      <div class="canvas-stage">
+        <canvas id="videoCanvas" width="720" height="1280"></canvas>
+      </div>
+
+      <div class="transport">
+        <button id="playPauseBtn">▶ Play</button>
+        <input type="range" id="seekSlider" min="0" max="20" step="0.05" value="0" />
+        <span class="time-badge" id="timeDisplay">00:00.0 / 00:20.0</span>
+        <label style="font-size:0.8rem; display:flex; align-items:center; gap:4px; cursor:pointer;">
+          <input type="checkbox" id="voiceToggle" checked /> 🗣️ Voice
+        </label>
+        <label style="font-size:0.8rem; display:flex; align-items:center; gap:4px; cursor:pointer;">
+          <input type="checkbox" id="musicToggle" checked /> 🎵 Synth
+        </label>
+      </div>
+    </section>
+
+    <!-- RIGHT: AI GENERATOR, EXTENDER & SCENE EDITOR -->
+    <aside class="panel">
+      <span class="label-sm">1. AI Video Prompt & Settings</span>
+      <textarea id="promptInput" rows="2" placeholder="Describe your video (e.g., The secret history of coffee in Ethiopia, neon cyberpunk future, space exploration)...">A cyberpunk traveler exploring glowing futuristic Addis Ababa in the rain</textarea>
+
+      <div class="row-2">
+        <div>
+          <span class="label-sm">Target Length</span>
+          <select id="durationSelect" style="width:100%; margin-top:4px;">
+            <option value="15">⏱️ 15 Seconds (3 Scenes)</option>
+            <option value="30" selected>⏱️ 30 Seconds (6 Scenes)</option>
+            <option value="45">⏱️ 45 Seconds (9 Scenes)</option>
+            <option value="60">⏱️ 60 Seconds (12 Scenes)</option>
+          </select>
+        </div>
+        <div>
+          <span class="label-sm">Language</span>
+          <select id="langSelect" style="width:100%; margin-top:4px;">
+            <option value="English" data-bcp="en-US">🇺🇸 English</option>
+            <option value="Amharic (አማርኛ)" data-bcp="am-ET">🇪🇹 Amharic (አማርኛ)</option>
+            <option value="Arabic (العربية)" data-bcp="ar-SA">🇸🇦 Arabic</option>
+            <option value="Spanish" data-bcp="es-ES">🇪🇸 Spanish</option>
+            <option value="French" data-bcp="fr-FR">🇫🇷 French</option>
+            <option value="Hindi" data-bcp="hi-IN">🇮🇳 Hindi</option>
+            <option value="Chinese" data-bcp="zh-CN">🇨🇳 Chinese</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row-2">
+        <div>
+          <span class="label-sm">Caption Style</span>
+          <select id="captionStyleSelect" style="width:100%; margin-top:4px;">
+            <option value="hormozi">🔥 Viral Karaoke Pop</option>
+            <option value="neon">⚡ Neon Cyber Glow</option>
+            <option value="box">💖 Highlight Banner</option>
+            <option value="cinema">🎬 Classic Cinema</option>
+          </select>
+        </div>
+        <div>
+          <span class="label-sm">Aspect Ratio</span>
+          <select id="aspectSelect" style="width:100%; margin-top:4px;">
+            <option value="9:16">📱 9:16 Vertical (Shorts/Reels)</option>
+            <option value="16:9">🖥️ 16:9 Widescreen (YouTube)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row-2" style="margin-top:2px;">
+        <button id="generateBtn" class="btn-primary" style="justify-content:center; padding:11px;">
+          ✨ Generate Video
+        </button>
+        <button id="extendVideoBtn" class="btn-extend" style="justify-content:center; padding:11px;" title="Adds +15 seconds of new AI scenes continuing your story!">
+          ➕ Extend (+15s)
+        </button>
+      </div>
+
+      <hr style="border-color:var(--border); margin:4px 0;" />
+
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span class="label-sm">2. Multi-Scene Storyboard (<span id="sceneCountLabel">4</span> Scenes)</span>
+        <button id="reloadImagesBtn" style="padding:4px 8px; font-size:0.75rem;">🔄 Refresh AI Art</button>
+      </div>
+
+      <div class="scene-list" id="sceneList"></div>
+    </aside>
+  </main>
+
+  <!-- EXTENSION BUILDER MODAL -->
+  <div class="modal-backdrop" id="extModal">
+    <div class="modal">
+      <h3 style="color:var(--accent);">🧩 Install as Browser Side-Panel Extension</h3>
+      <p style="font-size:0.86rem; color:var(--muted); line-height:1.45;">
+        Chrome, Edge, and Kiwi Browser (on Android tablets) allow you to run <strong>CinePulse AI Studio</strong> as a persistent Side Panel Extension right next to any webpage!
+      </p>
+      <p style="font-size:0.84rem; color:var(--text);">
+        Tap the button below to automatically generate and download the 3 required Manifest V3 extension files (<code>manifest.json</code>, <code>background.js</code>, and <code>sidepanel.html</code>):
+      </p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:4px;">
+        <button id="downloadExtFilesBtn" class="btn-primary">📥 Download Extension Files</button>
+        <button id="closeExtModalBtn">Close</button>
+      </div>
+      <div style="font-size:0.78rem; color:var(--muted); background:#0d101a; padding:10px; border-radius:8px;">
+        <strong>How to load it:</strong> Put the downloaded files in one folder → Open <code>chrome://extensions</code> → Turn on <strong>Developer mode</strong> → Tap <strong>Load unpacked</strong> and select the folder.
+      </div>
+    </div>
+  </div>
+
+  <script id="appMainScript">
+    // ====================================================
+    // 1. PERSISTENT API KEY & INITIAL STORYBOARD
+    // ====================================================
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    apiKeyInput.value = localStorage.getItem('gemini_api_key') || '';
+    apiKeyInput.addEventListener('input', () => {
+      localStorage.setItem('gemini_api_key', apiKeyInput.value.trim());
+    });
+
+    const canvas = document.getElementById('videoCanvas');
+    const ctx = canvas.getContext('2d');
+    const statusBar = document.getElementById('statusBar');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const seekSlider = document.getElementById('seekSlider');
+    const timeDisplay = document.getElementById('timeDisplay');
+    const sceneListEl = document.getElementById('sceneList');
+
+    let scenes = [
+      {
+        duration: 5,
+        narration: "In 2088, rain-slicked neon towers rise above the hills of Addis Ababa.",
+        visualPrompt: "Cyberpunk futuristic Addis Ababa skyline at night, neon rain, glowing tramways, cinematic 8k",
+        cameraMove: "zoom-in",
+        colors: ["#0f0c29", "#ff006e", "#00f5d4"]
+      },
+      {
+        duration: 5,
+        narration: "Every street corner hums with holographic markets and ancient coffee rituals.",
+        visualPrompt: "Futuristic holographic street market with glowing cybernetic coffee ceremony, synthwave lighting",
+        cameraMove: "pan-right",
+        colors: ["#1a0b2e", "#ffbe0b", "#00bbf9"]
+      },
+      {
+        duration: 5,
+        narration: "High above the clouds, solar sky-trains connect the entire continent in seconds.",
+        visualPrompt: "High speed magnetic levitation neon train soaring over lush mountains at sunset, sci-fi anime style",
+        cameraMove: "zoom-out",
+        colors: ["#091526", "#a855f7", "#00f5d4"]
+      },
+      {
+        duration: 5,
+        narration: "Tap Generate or Extend +15s to build your own full-length AI movie right now!",
+        visualPrompt: "Glowing futuristic portal opening in a neon cyber plaza, dramatic volumetric rays, 8k",
+        cameraMove: "pan-left",
+        colors: ["#100720", "#00f5d4", "#ff006e"]
+      }
+    ];
+
+    let currentTime = 0;
+    let totalDuration = 20;
+    let isPlaying = false;
+    let lastTick = performance.now();
+    let activeSpokenIndex = -1;
+
+    function setStatus(msg) {
+      statusBar.textContent = msg;
+    }
+
+    // ====================================================
+    // 2. PARALLEL AI IMAGE LOADER + PROCEDURAL FALLBACK
+    // ====================================================
+    function preloadSceneImages() {
+      let loadedCount = 0;
+      scenes.forEach((sc, idx) => {
+        if (sc.imgElement && sc.loadedPrompt === sc.visualPrompt) return;
+        sc.loadedPrompt = sc.visualPrompt;
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        const seed = 100 + idx * 37;
+        const w = canvas.width;
+        const h = canvas.height;
+        img.src = `https://image.pollinations.ai/prompt/${encodeURIComponent(sc.visualPrompt)}?width=${w}&height=${h}&seed=${seed}&nologo=true`;
+        img.onload = () => {
+          sc.imgReady = true;
+          loadedCount++;
+          if (loadedCount === scenes.length) {
+            setStatus(`✅ All ${scenes.length} AI scene visuals loaded in parallel! Ready to Play or Export.`);
+          }
+        };
+        img.onerror = () => {
+          sc.imgReady = false; // Falls back to procedural cinema shader
+        };
+        sc.imgElement = img;
+      });
+    }
+
+    function recalcTimings() {
+      let acc = 0;
+      scenes.forEach((sc) => {
+        sc.start = acc;
+        sc.duration = Number(sc.duration) || 5;
+        sc.end = acc + sc.duration;
+        acc = sc.end;
+      });
+      totalDuration = Math.max(1, acc);
+      seekSlider.max = totalDuration;
+      document.getElementById('sceneCountLabel').textContent = scenes.length;
+    }
+
+    function renderStoryboardUI() {
+      recalcTimings();
+      sceneListEl.innerHTML = '';
+      scenes.forEach((sc, idx) => {
+        const card = document.createElement('div');
+        card.className = 'scene-card';
+        card.dataset.index = idx;
+
+        const head = document.createElement('div');
+        head.className = 'scene-header';
+        head.innerHTML = `<span>SCENE ${idx + 1} (${sc.start.toFixed(0)}s – ${sc.end.toFixed(0)}s) • ${sc.cameraMove.toUpperCase()}</span>`;
+
+        const delBtn = document.createElement('button');
+        delBtn.textContent = '✕';
+        delBtn.style.padding = '2px 6px';
+        delBtn.style.fontSize = '0.72rem';
+        delBtn.onclick = () => {
+          if (scenes.length > 1) {
+            scenes.splice(idx, 1);
+            renderStoryboardUI();
+          }
+        };
+        head.appendChild(delBtn);
+
+        const narInput = document.createElement('input');
+        narInput.type = 'text';
+        narInput.dir = 'auto';
+        narInput.value = sc.narration;
+        narInput.placeholder = "Spoken narration & caption...";
+        narInput.oninput = (e) => { sc.narration = e.target.value; };
+
+        const visInput = document.createElement('input');
+        visInput.type = 'text';
+        visInput.style.fontSize = '0.76rem';
+        visInput.style.color = '#94a3b8';
+        visInput.value = sc.visualPrompt;
+        visInput.placeholder = "Visual prompt...";
+        visInput.onchange = (e) => {
+          sc.visualPrompt = e.target.value;
+          preloadSceneImages();
+        };
+
+        card.append(head, narInput, visInput);
+        sceneListEl.appendChild(card);
+      });
+    }
+
+    renderStoryboardUI();
+    preloadSceneImages();
+
+    document.getElementById('reloadImagesBtn').addEventListener('click', () => {
+      scenes.forEach(s => { s.loadedPrompt = ''; s.imgReady = false; });
+      preloadSceneImages();
+      setStatus("🔄 Refreshing parallel AI visuals...");
+    });
+
+    document.getElementById('aspectSelect').addEventListener('change', (e) => {
+      if (e.target.value === '16:9') {
+        canvas.width = 1280;
+        canvas.height = 720;
+      } else {
+        canvas.width = 720;
+        canvas.height = 1280;
+      }
+      preloadSceneImages();
+    });
+
+    // ====================================================
+    // 3. GEMINI 2.5 FLASH: GENERATE & EXTEND (+15s)
+    // ====================================================
+    async function callGeminiDirector(isExtension = false) {
+      const apiKey = apiKeyInput.value.trim();
+      if (!apiKey) {
+        alert("Please paste your free Google AI Studio API Key at the top first!");
+        return;
+      }
+
+      const topic = document.getElementById('promptInput').value.trim() || "Epic sci-fi adventure";
+      const targetSec = isExtension ? 15 : parseInt(document.getElementById('durationSelect').value, 10);
+      const numScenes = Math.max(3, Math.round(targetSec / 5));
+      const lang = document.getElementById('langSelect').value;
+
+      const existingStory = scenes.map((s, i) => `Scene ${i+1}: ${s.narration}`).join('\n');
+
+      const systemPrompt = isExtension
+        ? `You are an AI Video Director. Continue the following video story seamlessly by adding ${numScenes} brand-new scenes (5 seconds each, +15 seconds total).
+Existing scenes so far:
+${existingStory}
+Write the "narration" in ${lang}. Write the "visualPrompt" in detailed English for an AI image generator.
+Return ONLY a valid JSON array of objects with keys:
+- "duration": 5
+- "narration": string (engaging 1-sentence voiceover in ${lang}, 8 to 14 words)
+- "visualPrompt": string (vivid cinematic description in English)
+- "cameraMove": one of ["zoom-in", "zoom-out", "pan-left", "pan-right"]
+- "colors": array of 3 hex color strings matching the mood.`
+        : `You are an AI Video Director. Create a ${targetSec}-second multi-scene video storyboard (${numScenes} scenes, 5 seconds each) about: "${topic}".
+Write the "narration" in ${lang}. Write the "visualPrompt" in detailed English for an AI image generator.
+Return ONLY a valid JSON array of objects with keys:
+- "duration": 5
+- "narration": string (engaging 1-sentence voiceover in ${lang}, 8 to 14 words)
+- "visualPrompt": string (vivid cinematic description in English)
+- "cameraMove": one of ["zoom-in", "zoom-out", "pan-left", "pan-right"]
+- "colors": array of 3 hex color strings matching the mood.`;
+
+      try {
+        setStatus(isExtension
+          ? "⏳ Gemini 2.5 Flash is extending your video by +15 seconds..."
+          : `⏳ Gemini 2.5 Flash is writing your ${targetSec}s multi-scene video...`);
+
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: systemPrompt }] }],
+              generationConfig: { responseMimeType: "application/json" }
+            })
+          }
+        );
+
+        const data = await response.json();
+        if (data.error) throw new Error(data.error.message);
+
+        const rawJson = data.candidates[0].content.parts[0].text;
+        const parsedScenes = JSON.parse(rawJson);
+
+        if (isExtension) {
+          scenes = scenes.concat(parsedScenes);
+        } else {
+          scenes = parsedScenes;
+          currentTime = 0;
+        }
+
+        renderStoryboardUI();
+        preloadSceneImages();
+        setStatus(`✅ Generated ${scenes.length} scenes (${totalDuration}s total)! Loading AI visuals in parallel...`);
+      } catch (err) {
+        setStatus(`❌ Gemini API Error: ${err.message}`);
+      }
+    }
+
+    document.getElementById('generateBtn').addEventListener('click', () => callGeminiDirector(false));
+    document.getElementById('extendVideoBtn').addEventListener('click', () => callGeminiDirector(true));
+
+    // ====================================================
+    // 4. VOICEOVER & WEB AUDIO SYNTH SOUNDTRACK
+    // ====================================================
+    let audioCtx = null;
+    let audioDest = null;
+    let synthInterval = null;
+
+    function initAudioEngine() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        audioDest = audioCtx.createMediaStreamDestination();
+      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+
+    function playAmbientChord() {
+      if (!isPlaying || !document.getElementById('musicToggle').checked || !audioCtx) return;
+      const now = audioCtx.currentTime;
+      const notes = [110, 164.81, 220, 261.63, 329.63];
+      const freq = notes[Math.floor(Math.random() * notes.length)];
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now);
+
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.exponentialRampToValueAtTime(0.06, now + 0.4);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 2.4);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      if (audioDest) gain.connect(audioDest);
+
+      osc.start(now);
+      osc.stop(now + 2.5);
+    }
+
+    function speakSceneNarration(sceneIndex) {
+      if (!document.getElementById('voiceToggle').checked) return;
+      if (!('speechSynthesis' in window)) return;
+      const sc = scenes[sceneIndex];
+      if (!sc) return;
+
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(sc.narration);
+      const langOpt = document.getElementById('langSelect').selectedOptions[0];
+      utter.lang = langOpt ? langOpt.dataset.bcp : 'en-US';
+      utter.rate = 1.05;
+      window.speechSynthesis.speak(utter);
+    }
+
+    // ====================================================
+    // 5. PLAYBACK & 60 FPS KEN BURNS + VIRAL CAPTIONS
+    // ====================================================
+    function startPlayback() {
+      initAudioEngine();
+      isPlaying = true;
+      activeSpokenIndex = -1;
+      playPauseBtn.textContent = "⏸ Pause";
+      if (!synthInterval) {
+        playAmbientChord();
+        synthInterval = setInterval(playAmbientChord, 1800);
+      }
+    }
+
+    function stopPlayback() {
+      isPlaying = false;
+      playPauseBtn.textContent = "▶ Play";
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      if (synthInterval) {
+        clearInterval(synthInterval);
+        synthInterval = null;
+      }
+    }
+
+    playPauseBtn.addEventListener('click', () => {
+      if (isPlaying) stopPlayback();
+      else {
+        if (currentTime >= totalDuration) currentTime = 0;
+        startPlayback();
+      }
+    });
+
+    seekSlider.addEventListener('input', (e) => {
+      currentTime = parseFloat(e.target.value);
+      activeSpokenIndex = -1;
+    });
+
+    function drawProceduralBackdrop(sc, progress) {
+      const w = canvas.width;
+      const h = canvas.height;
+      const cols = sc.colors || ["#0f0c29", "#a855f7", "#00f5d4"];
+
+      const grad = ctx.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, cols[0]);
+      grad.addColorStop(0.55, cols[1]);
+      grad.addColorStop(1, cols[2]);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      // Animated cinematic light orbs
+      for (let i = 0; i < 6; i++) {
+        const angle = progress * Math.PI * 2 + i * 1.1;
+        const ox = w * 0.5 + Math.cos(angle) * (w * 0.3);
+        const oy = h * 0.45 + Math.sin(angle * 0.7) * (h * 0.25);
+        const rad = (90 + i * 25) * (w / 720);
+
+        const orb = ctx.createRadialGradient(ox, oy, 5, ox, oy, rad);
+        orb.addColorStop(0, 'rgba(255,255,255,0.22)');
+        orb.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = orb;
+        ctx.beginPath();
+        ctx.arc(ox, oy, rad, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawSceneWithKenBurns(sc, progress, alpha = 1) {
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+
+      // Calculate Ken Burns transform
+      let scale = 1.12;
+      let tx = 0;
+      let ty = 0;
+
+      if (sc.cameraMove === 'zoom-in') {
+        scale = 1.0 + progress * 0.18;
+      } else if (sc.cameraMove === 'zoom-out') {
+        scale = 1.18 - progress * 0.18;
+      } else if (sc.cameraMove === 'pan-left') {
+        scale = 1.15;
+        tx = (0.5 - progress) * w * 0.1;
+      } else if (sc.cameraMove === 'pan-right') {
+        scale = 1.15;
+        tx = (progress - 0.5) * w * 0.1;
+      }
+
+      ctx.translate(w / 2 + tx, h / 2 + ty);
+      ctx.scale(scale, scale);
+      ctx.translate(-w / 2, -h / 2);
+
+      if (sc.imgReady && sc.imgElement) {
+        ctx.drawImage(sc.imgElement, 0, 0, w, h);
+      } else {
+        drawProceduralBackdrop(sc, progress);
+      }
+
+      ctx.restore();
+
+      // Subtle dark vignette at bottom for caption legibility
+      const vig = ctx.createLinearGradient(0, h * 0.55, 0, h);
+      vig.addColorStop(0, 'rgba(0,0,0,0)');
+      vig.addColorStop(1, 'rgba(0,0,0,0.72)');
+      ctx.fillStyle = vig;
+      ctx.fillRect(0, h * 0.55, w, h * 0.45);
+    }
+
+    function drawWordByWordCaptions(sc, progress) {
+      const w = canvas.width;
+      const h = canvas.height;
+      const style = document.getElementById('captionStyleSelect').value;
+      const scale = w / 720;
+      const fontSize = Math.round(44 * scale);
+
+      const words = sc.narration.trim().split(/\s+/);
+      const activeWordIdx = Math.min(words.length - 1, Math.floor(progress * words.length));
+
+      ctx.save();
+      ctx.font = `900 ${fontSize}px 'Inter', system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // Group words into lines that fit 84% width
+      const maxWidth = w * 0.84;
+      const lines = [];
+      let currentLine = [];
+
+      words.forEach((word, idx) => {
+        const testStr = [...currentLine.map(o => o.word), word].join(' ');
+        if (ctx.measureText(testStr).width > maxWidth && currentLine.length > 0) {
+          lines.push(currentLine);
+          currentLine = [{ word, idx }];
+        } else {
+          currentLine.push({ word, idx });
+        }
+      });
+      if (currentLine.length > 0) lines.push(currentLine);
+
+      const lineHeight = fontSize * 1.32;
+      const baseY = h * 0.78 - ((lines.length - 1) * lineHeight) / 2;
+
+      lines.forEach((lineArr, lineIdx) => {
+        const y = baseY + lineIdx * lineHeight;
+        const fullLineText = lineArr.map(o => (style === 'hormozi' || style === 'neon') ? o.word.toUpperCase() : o.word).join(' ');
+
+        if (style === 'box') {
+          const bw = ctx.measureText(fullLineText).width + 36 * scale;
+          ctx.fillStyle = 'rgba(255, 0, 110, 0.9)';
+          ctx.beginPath();
+          ctx.roundRect(w / 2 - bw / 2, y - fontSize * 0.68, bw, fontSize * 1.36, 12 * scale);
+          ctx.fill();
+        }
+
+        // Draw word-by-word for Karaoke active highlight
+        let totalLineW = ctx.measureText(fullLineText).width;
+        let cursorX = (w - totalLineW) / 2;
+        ctx.textAlign = 'left';
+
+        lineArr.forEach((item) => {
+          const wordStr = (style === 'hormozi' || style === 'neon') ? item.word.toUpperCase() : item.word;
+          const isCurrentWord = (item.idx === activeWordIdx);
+
+          if (style === 'hormozi') {
+            ctx.lineWidth = 10 * scale;
+            ctx.strokeStyle = '#000000';
+            ctx.lineJoin = 'round';
+            ctx.strokeText(wordStr, cursorX, y);
+            ctx.fillStyle = isCurrentWord ? '#00f5d4' : '#ffe600';
+            ctx.fillText(wordStr, cursorX, y);
+          } else if (style === 'neon') {
+            ctx.shadowColor = isCurrentWord ? '#ff006e' : '#00f5d4';
+            ctx.shadowBlur = 18 * scale;
+            ctx.fillStyle = isCurrentWord ? '#ffffff' : '#00f5d4';
+            ctx.fillText(wordStr, cursorX, y);
+          } else {
+            ctx.lineWidth = 5 * scale;
+            ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+            ctx.strokeText(wordStr, cursorX, y);
+            ctx.fillStyle = isCurrentWord ? '#ffe600' : '#ffffff';
+            ctx.fillText(wordStr, cursorX, y);
+          }
+
+          cursorX += ctx.measureText(wordStr + ' ').width;
+        });
+      });
+
+      ctx.restore();
+    }
+
+    function formatSec(s) {
+      const m = Math.floor(s / 60);
+      const rem = (s % 60).toFixed(1);
+      return `${String(m).padStart(2, '0')}:${rem.padStart(4, '0')}`;
+    }
+
+    function renderLoop(now) {
+      const dt = (now - lastTick) / 1000;
+      lastTick = now;
+
+      if (isPlaying) {
+        currentTime += dt;
+        if (currentTime >= totalDuration) {
+          currentTime = totalDuration;
+          stopPlayback();
+        }
+      }
+
+      seekSlider.value = currentTime;
+      timeDisplay.textContent = `${formatSec(currentTime)} / ${formatSec(totalDuration)}`;
+
+      const activeIdx = scenes.findIndex(s => currentTime >= s.start && currentTime <= s.end);
+      const idx = activeIdx === -1 ? scenes.length - 1 : activeIdx;
+      const sc = scenes[idx];
+
+      if (sc) {
+        if (isPlaying && idx !== activeSpokenIndex) {
+          activeSpokenIndex = idx;
+          speakSceneNarration(idx);
+        }
+
+        const progress = Math.min(1, Math.max(0, (currentTime - sc.start) / sc.duration));
+        drawSceneWithKenBurns(sc, progress, 1);
+
+        // Smooth 0.6s crossfade with previous scene
+        if (idx > 0 && (currentTime - sc.start) < 0.6) {
+          const prevAlpha = 1 - ((currentTime - sc.start) / 0.6);
+          drawSceneWithKenBurns(scenes[idx - 1], 1, prevAlpha);
+        }
+
+        drawWordByWordCaptions(sc, progress);
+      }
+
+      document.querySelectorAll('.scene-card').forEach((el, i) => {
+        el.classList.toggle('active', i === idx);
+      });
+
+      requestAnimationFrame(renderLoop);
+    }
+
+    requestAnimationFrame(renderLoop);
+
+    // ====================================================
+    // 6. EXPORT FULL VIDEO (.WEBM WITH AUDIO)
+    // ====================================================
+    document.getElementById('exportBtn').addEventListener('click', () => {
+      initAudioEngine();
+      const stream = canvas.captureStream(30);
+      if (audioDest) {
+        const tracks = audioDest.stream.getAudioTracks();
+        if (tracks.length > 0) stream.addTrack(tracks[0]);
+      }
+
+      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+        ? 'video/webm;codecs=vp9'
+        : 'video/webm';
+      const recorder = new MediaRecorder(stream, { mimeType: mime });
+      const chunks = [];
+
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `cinepulse_${totalDuration}s_video.webm`;
+        a.click();
+        setStatus("✅ Full Multi-Scene Video Downloaded!");
+      };
+
+      currentTime = 0;
+      startPlayback();
+      recorder.start();
+      setStatus(`🔴 Recording ${totalDuration}s video... It will automatically download when finished!`);
+
+      const watchEnd = setInterval(() => {
+        if (!isPlaying && recorder.state === 'recording') {
+          clearInterval(watchEnd);
+          recorder.stop();
+        }
+      }, 200);
+    });
+
+    // ====================================================
+    // 7. BROWSER EXTENSION GENERATOR (MANIFEST V3)
+    // ====================================================
+    const extModal = document.getElementById('extModal');
+    document.getElementById('openExtModalBtn').onclick = () => extModal.style.display = 'flex';
+    document.getElementById('closeExtModalBtn').onclick = () => extModal.style.display = 'none';
+
+    function triggerDownload(filename, content) {
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+    }
+
+    document.getElementById('downloadExtFilesBtn').addEventListener('click', () => {
+      const manifestJson = JSON.stringify({
+        manifest_version: 3,
+        name: "CinePulse AI Video Generator",
+        version: "1.0.0",
+        description: "Generate 15s-60s multi-scene AI videos with Gemini 2.5 Flash.",
+        permissions: ["sidePanel", "storage"],
+        action: { default_title: "Open CinePulse Studio" },
+        side_panel: { default_path: "sidepanel.html" },
+        background: { service_worker: "background.js" }
+      }, null, 2);
+
+      const backgroundJs = `chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error);`;
+
+      // Extract external script for Manifest V3 CSP compliance
+      const scriptContent = document.getElementById('appMainScript').textContent;
+      const fullHtml = document.documentElement.outerHTML.replace(
+        /<script id="appMainScript">[\s\S]*?<\/script>/,
+        '<script src="sidepanel.js"><\/script>'
+      );
+
+      triggerDownload('manifest.json', manifestJson);
+      setTimeout(() => triggerDownload('background.js', backgroundJs), 250);
+      setTimeout(() => triggerDownload('sidepanel.js', scriptContent), 500);
+      setTimeout(() => triggerDownload('sidepanel.html', '<!DOCTYPE html>\n' + fullHtml), 750);
+      setStatus("🧩 Downloaded Manifest V3 Browser Extension files!");
+    });
+  </script>
+</body>
+</html>
